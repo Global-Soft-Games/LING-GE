@@ -519,12 +519,12 @@ AI 能力再強，也只是工具。真正的差異化來自於：**用什麼思
 ### 5.2 使用者系統
 
 **雙額度機制：**
-- **緣額度**：免費額度，註冊即送 10 次
+- **緣額度**：免費額度，註冊即送 100 次
 - **魂額度**：付費額度，透過 PayPal 儲值
 
 **兩種身份：**
 - **使用者（Summoner）**：召喚智靈完成任務
-- **創作者（Author）**：上傳智靈獲得分潤（70%）
+- **創作者（Author）**：上傳智靈獲得分潤（90%）
 
 ### 5.3 資料持久化
 
@@ -589,10 +589,10 @@ curl https://api.lingge.app/api/public-config
 
 ```json
 {
-  "freeCredits": 10,
-  "pricePerSummon": 0.1,
-  "authorShare": 0.7,
-  "platformShare": 0.3,
+  "freeCredits": 100,
+  "pricePerSummon": 0.001,
+  "authorShare": 0.9,
+  "platformShare": 0.1,
   "topupEnabled": true
 }
 ```
@@ -854,10 +854,10 @@ ling-ge/
 
 ```json
 {
-  "freeCredits": 10,
-  "pricePerSummon": 0.1,
-  "authorShare": 0.7,
-  "platformShare": 0.3,
+  "freeCredits": 100,
+  "pricePerSummon": 0.001,
+  "authorShare": 0.9,
+  "platformShare": 0.1,
   "topupEnabled": true
 }
 ```
@@ -866,15 +866,15 @@ ling-ge/
 
 | 項目 | 金額 | 說明 |
 |------|------|------|
-| 每次召喚價格 | $0.1 USD | 直接扣款，無額度制 |
-| 註冊贈送 | 10 credits | 新用戶免費體驗 |
+| 每次召喚價格 | $0.001 USD | 直接扣款，無額度制 |
+| 註冊贈送 | 100 credits | 新用戶免費體驗 |
 
-**分潤比例（70/30）：**
+**分潤比例（90/10）：**
 
 | 角色 | 比例 | 每次召喚所得 |
 |------|------|-------------|
-| 創作者 | 70% | $0.07 |
-| 平台 | 30% | $0.03 |
+| 創作者 | 90% | $0.0009 |
+| 平台 | 10% | $0.0001 |
 
 **為什麼選儲值制而非訂閱制？**
 
