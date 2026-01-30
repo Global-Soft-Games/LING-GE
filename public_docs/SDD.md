@@ -349,233 +349,46 @@ AI 能力再強，也只是工具。真正的差異化來自於：**用什麼思
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 3.2 MCP 工具定義
+### 3.2 MCP 工具概覽
 
-```typescript
-// MCP Server Tools v2.1.0
-interface MCPTools {
-  // ============================================
-  // 主入口工具
-  // ============================================
+靈閣透過 MCP (Model Context Protocol) 提供以下核心功能：
 
-  // ask - 主要入口（推薦候選，不扣款）
-  ask: {
-    params: {
-      question: string;  // 用戶問題（如「介面很亂」）
-    };
-    returns: {
-      success: boolean;
-      candidates: {
-        id: string;
-        name: string;
-        description: string;
-        category: string;
-        relevance_score: number;
-      }[];
-      instruction: string;  // 告訴 AI 下一步怎麼做
-    };
-  };
+#### 主要工具
 
-  // summon_agent - 召喚智靈（扣款 + 觀念注入）
-  summon_agent: {
-    params: {
-      agent_id: string;    // 智靈 ID
-      user_query?: string; // 用戶問題（可選，用於觀念注入）
-    };
-    returns: {
-      success: boolean;
-      system_prompt: string;
-      concept_injection?: {
-        user_query: string;
-        enriched_context: string;  // 專業術語轉換
-        applied_theories: string[];
-        interpretations: string[];
-        guidance: string;
-      };
-      yuan: number;
-      hun: number;
-      mode: 'yuan' | 'hun';
-    };
-  };
+- **ask**：詢問問題，系統推薦適合的智靈（不消耗額度）
+- **summon_agent**：召喚智靈並注入專業觀念（消耗額度）
 
-  // ============================================
-  // 查詢工具
-  // ============================================
+#### 查詢工具
 
-  list_agents: {
-    params: {
-      category?: string;
-      search?: string;
-    };
-    returns: Agent[];
-  };
+- **list_agents**：列出所有可用智靈，支援類別篩選
+- **get_agent**：取得特定智靈的詳細資訊
+- **get_preset**：取得預設智靈組合包
+- **recommend_agents**：根據描述推薦適合的智靈
 
-  get_agent: {
-    params: { id: string; };
-    returns: AgentDetail;
-  };
+#### 帳號管理
 
-  get_preset: {
-    params: { preset_name: string; };
-    returns: Agent[];
-  };
+- **get_balance**：查看額度餘額
+- **set_mode**：切換額度使用模式（緣/魂）
+- **get_usage_stats**：查看使用統計
 
-  recommend_agents: {
-    params: {
-      query: string;
-      limit?: number;  // 預設 3
-    };
-    returns: Agent[];
-  };
+### 3.3 觀念注入機制
 
-  // ============================================
-  // 觀念注入工具（進階）
-  // ============================================
+當使用者召喚智靈時，系統會：
 
-  // get_tags - 取得所有標籤（供語意匹配）
-  get_tags: {
-    params: {};
-    returns: {
-      success: boolean;
-      total: number;
-      tags: {
-        tag: string;      // 如「心流理論」
-        agents: { id: string; name: string }[];
-        category: 'theory' | 'keyword' | 'category';
-      }[];
-    };
-  };
+1. **語意分析**：解析用戶問題中的關鍵概念
+2. **理論匹配**：從智靈的專業理論庫中找出相關理論
+3. **術語轉換**：將通俗問題轉換為專業術語
+4. **脈絡建立**：提供該領域的思考框架與指引
 
-  // enhance - 標籤增強 prompt
-  enhance: {
-    params: {
-      user_input: string;      // 用戶問題
-      matched_tags: string[];  // AI 選出的相關標籤
-    };
-    returns: {
-      success: boolean;
-      enhanced_prompt: string;
-      matched_agent: { id: string; name: string; ... } | null;
-      alternatives: { id: string; name: string; score: number }[];
-    };
-  };
-
-  // ============================================
-  // 帳號管理工具
-  // ============================================
-
-  get_balance: {
-    params: {};
-    returns: { yuan: number; hun: number; mode: 'yuan' | 'hun'; };
-  };
-
-  set_mode: {
-    params: { mode: 'yuan' | 'hun'; };
-    returns: { success: boolean; mode: string; };
-  };
-
-  get_usage_stats: {
-    params: {};
-    returns: {
-      total_summons: number;
-      by_agent: { agent_id: string; count: number }[];
-      recent_summons: { agent_id: string; timestamp: string }[];
-    };
-  };
-}
+**範例：**
 ```
+用戶問題：「介面很亂，怎麼改善？」
+召喚：design-thinking-expert（設計思考智靈）
 
-### 3.3 MCP Server 實作
-
-```typescript
-// mcp-server/index.ts
-import { Server } from "@modelcontextprotocol/sdk/server";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio";
-
-const server = new Server({
-  name: "ling-ge",
-  version: "1.0.0",
-}, {
-  capabilities: {
-    tools: {},
-    resources: {},
-  },
-});
-
-// 註冊工具
-server.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: [
-    {
-      name: "list_agents",
-      description: "列出所有可用的 AI Agent，可按類別過濾",
-      inputSchema: {
-        type: "object",
-        properties: {
-          category: {
-            type: "string",
-            enum: ["thinking", "frontend", "backend", "game-dev", "industrial", "firmware", "quality"],
-            description: "Agent 類別"
-          }
-        }
-      }
-    },
-    {
-      name: "get_agent",
-      description: "取得特定 Agent 的詳細資訊，包含完整的 system prompt",
-      inputSchema: {
-        type: "object",
-        properties: {
-          id: { type: "string", description: "Agent ID" }
-        },
-        required: ["id"]
-      }
-    },
-    {
-      name: "download_agent",
-      description: "下載 Agent 檔案，支援多種格式輸出（Claude Code / GPT / Raw Prompt）",
-      inputSchema: {
-        type: "object",
-        properties: {
-          id: { type: "string", description: "Agent ID" },
-          target_path: { type: "string", description: "目標路徑", default: ".claude/agents/" },
-          format: { 
-            type: "string", 
-            enum: ["claude-code", "gpt", "raw-prompt"],
-            description: "輸出格式：claude-code（完整格式）、gpt（GPT Custom Instructions）、raw-prompt（純 System Prompt）",
-            default: "claude-code"
-          }
-        },
-        required: ["id"]
-      }
-    },
-    {
-      name: "get_preset",
-      description: "取得預設的 Agent 組合包，適合特定類型專案",
-      inputSchema: {
-        type: "object",
-        properties: {
-          preset_name: {
-            type: "string",
-            enum: ["game-project", "industrial-project", "fullstack-project", "backend-project", "firmware-project", "iot-project", "security-focused"],
-            description: "組合包名稱"
-          }
-        },
-        required: ["preset_name"]
-      }
-    },
-    {
-      name: "recommend_agents",
-      description: "根據專案描述智慧推薦適合的 Agent",
-      inputSchema: {
-        type: "object",
-        properties: {
-          project_description: { type: "string", description: "專案描述" }
-        },
-        required: ["project_description"]
-      }
-    }
-  ]
-}));
+觀念注入結果：
+- 專業術語：「資訊架構混亂」→「視覺層級不清」
+- 應用理論：格式塔原理、資訊架構理論
+- 思考框架：同理心觀察 → 定義問題 → 發想解法 → 原型測試
 ```
 
 ---
@@ -680,383 +493,124 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 
 ---
 
-## 5. 資料結構
+## 5. 核心概念與資料結構
 
-### 5.1 Agent 定義（本地檔案）
+> **詳細實作細節**：請參閱內部文件 `internal_docs/SDD_INTERNAL.md`（團隊成員專用）
 
-```typescript
-interface Agent {
-  id: string;                    // 唯一識別碼
-  name: string;                  // 顯示名稱
-  category: AgentCategory;       // 類別
-  description: string;           // 觸發條件說明
-  theories: string[];            // 結合的科學理論
-  tools: string[];               // 可用工具
-  model: 'opus' | 'sonnet' | 'haiku';
-  systemPrompt: string;          // 完整 System Prompt
-  keywords: string[];            // 觸發關鍵字
-  antiKeywords: string[];        // 排除關鍵字
-  author?: string;               // 作者 email（用戶上傳時必填）
-  createdAt: Date;
-  updatedAt: Date;
-}
+### 5.1 智靈（Agent）
 
-type AgentCategory =
-  | 'thinking'
-  | 'frontend'
-  | 'backend'
-  | 'game-dev'
-  | 'industrial'
-  | 'firmware'
-  | 'quality';
-```
+智靈是靈閣的核心單元，包含：
 
-### 5.2 Preset 定義
+**基本屬性：**
+- 名稱與描述
+- 專業領域類別（思維理論、前端、後端、遊戲開發等）
+- 結合的理論框架
+- 觸發關鍵字
 
-```typescript
-interface Preset {
-  id: string;
-  name: string;
-  description: string;
-  agents: string[];        // Agent ID 列表
-  recommendedFor: string;  // 適用專案類型描述
-}
-```
+**運作機制：**
+- 透過語意匹配自動選擇適合的智靈
+- 注入專業思維到 AI 的 System Prompt
+- 支援複合理論混搭（多個智靈組合）
 
-### 5.3 MongoDB Collections
+**來源：**
+- 官方智靈（700+ 個預建智靈）
+- 用戶上傳智靈（創作者經濟）
 
-#### 5.3.1 users - 用戶帳號
+### 5.2 使用者系統
 
-```typescript
-interface User {
-  _id: ObjectId;
-  email: string;           // 用戶 email（唯一）
-  name: string;            // 顯示名稱
-  yuan: number;            // 緣額度（免費額度）
-  hun: number;             // 魂額度（付費額度）
-  mode: 'yuan' | 'hun';    // 當前召喚模式
-  password?: string;       // 密碼 hash（可選）
-  customInstructions?: string; // 自訂 MCP 指示
-  createdAt: Date;
-  updatedAt: Date;
-}
-```
+**雙額度機制：**
+- **緣額度**：免費額度，註冊即送 10 次
+- **魂額度**：付費額度，透過 PayPal 儲值
 
-#### 5.3.2 apiKeys - API 金鑰
+**兩種身份：**
+- **使用者（Summoner）**：召喚智靈完成任務
+- **創作者（Author）**：上傳智靈獲得分潤（70%）
 
-```typescript
-interface ApiKey {
-  _id: ObjectId;
-  key: string;             // API Key（唯一，格式：lg-xxx）
-  userId: ObjectId;        // 關聯用戶
-  name: string;            // 金鑰名稱
-  lastUsedAt: Date | null;
-  createdAt: Date;
-}
-```
+### 5.3 資料持久化
 
-#### 5.3.3 oauthAccounts - OAuth 帳號
+靈閣使用 MongoDB 儲存：
+- 使用者帳號與額度
+- 智靈召喚記錄
+- 交易與分潤記錄
+- OAuth 認證資訊
 
-```typescript
-interface OAuthAccount {
-  _id: ObjectId;
-  oauthId: string;         // OAuth ID（格式：lg-oauth-xxx）
-  apiKeyId: ObjectId;      // 關聯 API Key
-  userId: ObjectId;        // 關聯用戶
-  password: string;        // 密碼 hash
-  displayName: string;     // 顯示名稱
-  createdAt: Date;
-}
-```
-
-#### 5.3.4 oauthClients - OAuth 客戶端（Dynamic Registration）
-
-```typescript
-interface OAuthClient {
-  _id: ObjectId;
-  clientId: string;        // 客戶端 ID
-  clientSecret: string;    // 客戶端密鑰
-  clientName: string;      // 客戶端名稱
-  redirectUris: string[];  // 允許的 redirect URIs
-  createdAt: Date;
-}
-```
-
-#### 5.3.5 oauthCodes - 授權碼
-
-```typescript
-interface OAuthCode {
-  _id: ObjectId;
-  code: string;            // 授權碼
-  clientId: string;        // 客戶端 ID
-  apiKeyId: ObjectId;      // 關聯 API Key
-  redirectUri: string;     // Redirect URI
-  codeChallenge?: string;  // PKCE code challenge
-  codeChallengeMethod?: string;
-  expiresAt: Date;
-  createdAt: Date;
-}
-```
-
-#### 5.3.6 oauthTokens - Access/Refresh Tokens
-
-```typescript
-interface OAuthToken {
-  _id: ObjectId;
-  accessToken: string;     // Access Token
-  refreshToken?: string;   // Refresh Token（可選）
-  clientId: string;        // 客戶端 ID
-  apiKeyId: ObjectId;      // 關聯 API Key
-  expiresAt: Date;
-  createdAt: Date;
-}
-```
-
-#### 5.3.7 transactions - 交易紀錄
-
-```typescript
-interface Transaction {
-  _id: ObjectId;
-  userId: ObjectId;        // 關聯用戶
-  type: 'register' | 'purchase' | 'summon';
-  amount: number;          // 額度變化（正=增加，負=扣除）
-  balanceAfter: number;    // 交易後餘額
-  description: string;     // 交易描述
-  createdAt: Date;
-}
-```
-
-#### 5.3.8 authorEarnings - 作者收益
-
-```typescript
-interface AuthorEarning {
-  _id: ObjectId;
-  author: string;          // 作者 email
-  agentId: string;         // Agent ID
-  agentName: string;       // Agent 名稱
-  authorEarning: number;   // 作者收入（USD）
-  platformEarning: number; // 平台收入（USD）
-  apiKeyId: ObjectId;      // 使用的 API Key
-  createdAt: Date;
-}
-```
-
-#### 5.3.9 uploadedAgents - 用戶上傳的 Agent
-
-```typescript
-interface UploadedAgent {
-  _id: ObjectId;
-  agentId: string;         // Agent ID（唯一）
-  name: string;            // Agent 名稱
-  category: string;        // 類別
-  description: string;     // 描述
-  systemPrompt: string;    // System Prompt
-  model: string;           // 模型
-  tools: string[];         // 工具
-  author: string;          // 作者 email
-  theories?: string[];     // 科學理論
-  keywords?: string[];     // 觸發關鍵字
-  createdAt: Date;
-  updatedAt: Date;
-}
-```
-
-#### 5.3.10 summonLogs - 召喚紀錄
-
-```typescript
-interface SummonLog {
-  _id: ObjectId;
-  agentId: string;         // Agent ID
-  agentName: string;       // Agent 名稱
-  apiKeyId: ObjectId;      // 使用的 API Key
-  userId: ObjectId;        // 用戶 ID
-  author?: string;         // 作者 email（若有）
-  createdAt: Date;
-}
-```
+**混合 Agent 來源：**
+- 官方智靈：檔案系統（Markdown 格式）
+- 用戶智靈：MongoDB 資料庫
 
 ---
 
-## 6. 認證機制
+## 6. 認證與安全
 
-> **詳細文件**：請參閱 [docs/authentication.md](docs/authentication.md)
+### 6.1 OAuth 2.0 認證
 
-靈閣採用 **OAuth 2.0** 作為唯一的認證方式，支援多種 MCP 客戶端（ChatGPT、Claude Code、Gemini）。
+靈閣採用 **OAuth 2.0** 標準協議，確保安全性：
 
-### 6.1 快速概覽
+**使用者視角：**
+1. 在 ChatGPT/Claude Code 中設定 MCP 連線
+2. 選擇 OAuth 認證方式
+3. 在瀏覽器中登入靈閣（Email + TOTP 雙重認證）
+4. 授權完成，MCP 自動連線
 
-**認證流程**：
-1. 用戶在 Dashboard 創建 OAuth 帳號（`lg-oauth-xxxxxxxx` + 密碼）
-2. MCP 客戶端觸發 OAuth 授權流程
-3. 用戶在授權頁面輸入 OAuth ID + 密碼
-4. MCP Server 發放 Access Token（UUID 格式）
-5. MCP 客戶端使用 Access Token 呼叫 API
+**安全優勢：**
+- ✅ 不洩漏密碼給第三方應用
+- ✅ Token 加密儲存且定期過期
+- ✅ 可隨時撤銷授權
+- ✅ HTTPS 全程加密通訊
 
-**Token 驗證**：
-- 所有需要認證的 API 端點都使用 `validateOAuthToken` 函數
-- Token 格式：UUID（32 位元 hex 字串，無前綴）
-- 有效期：1 小時（可使用 Refresh Token 更新）
+**詳細教學：** [OAUTH_FLOW.md](OAUTH_FLOW.md)
 
-**移除的舊系統**（v3.0.0）：
-- ❌ API Key 系統（`lg_` 前綴）
-- ❌ 開發測試 Key（`DEV_API_KEYS`）
-- ✅ 統一使用 OAuth Token
+### 6.2 雙重認證 (TOTP)
+
+所有帳號都需要設定 TOTP (Time-based One-Time Password)：
+
+- 使用 Google Authenticator、Authy 等驗證器 App
+- 登入時需要輸入 6 位數驗證碼
+- 即使密碼洩漏也無法登入
 
 ---
 
-## 7. API 規格
+## 7. 公開 API 端點
 
-### 7.1 REST Endpoints
+### 7.1 無需認證的公開端點
 
-#### 公開 API（不需認證）
+| Endpoint | 說明 |
+|----------|------|
+| `GET /api/public-config` | 取得公開設定（計費、分潤比例） |
+| `GET /api/agents` | 列出所有可用智靈 |
+| `GET /api/agents/{id}` | 取得特定智靈資訊 |
+| `GET /health` | 健康檢查 |
 
-| Method | Endpoint | 說明 |
-|--------|----------|------|
-| GET | `/api/public-config` | 取得公開設定（分潤比例、價格等） |
-| GET | `/api/agents` | 取得所有智靈列表 |
-| GET | `/api/agents/{id}` | 取得單一智靈詳情 |
-| POST | `/api/recommend` | 根據描述推薦智靈 |
-| GET | `/api/tags` | 取得所有標籤（供語意匹配） |
-| POST | `/api/enhance` | 標籤增強 prompt |
-| GET | `/health` | 健康檢查 |
+**範例：取得公開設定**
 
-#### 需要 OAuth Token 認證
-
-| Method | Endpoint | 說明 |
-|--------|----------|------|
-| POST | `/api/agents/{id}/summon` | 召喚智靈（扣款 + 觀念注入） |
-| GET | `/api/balance` | 取得餘額（緣/魂雙額度） |
-| POST | `/api/mode` | 切換召喚模式（緣/魂） |
-| GET | `/api/usage-stats` | 取得使用統計 |
-| GET | `/api/password/status` | 檢查密碼是否已設定 |
-| POST | `/api/password` | 設定密碼 |
-| GET | `/api/oauth-accounts` | 取得 OAuth 帳號列表 |
-| POST | `/api/oauth-accounts` | 新增 OAuth 帳號 |
-| GET | `/api/tags` | 取得所有標籤（供 AI 語意匹配） |
-| POST | `/api/enhance` | 增強 prompt（AI 傳入匹配標籤） |
-
-#### OAuth 相關端點
-
-| Method | Endpoint | 說明 |
-|--------|----------|------|
-| GET | `/.well-known/oauth-authorization-server` | OAuth Metadata (RFC 8414) |
-| GET | `/.well-known/oauth-protected-resource` | Protected Resource Metadata (RFC 9728) |
-| POST | `/oauth/register` | Dynamic Client Registration |
-| GET | `/oauth/authorize` | 授權頁面 |
-| POST | `/oauth/authorize` | 處理授權 |
-| POST | `/oauth/token` | Token 端點 |
-| POST | `/api/validate-oauth-token` | 驗證 OAuth Token |
-
-### 6.2 觀念注入 API
-
-**POST `/api/agents/{id}/summon`**
-
-當提供 `user_query` 參數時，會啟用觀念注入：
+```bash
+curl https://api.lingge.app/api/public-config
+```
 
 ```json
-// Request
 {
-  "user_query": "介面很亂，不知道怎麼改"
-}
-
-// Response
-{
-  "success": true,
-  "agent_id": "ui-psychology-expert",
-  "agent_name": "介面心理學智靈",
-  "system_prompt": "...",
-  "concept_injection": {
-    "user_query": "介面很亂，不知道怎麼改",
-    "enriched_context": "用戶表達的「亂」在 UI/UX 領域可能涉及：認知負荷過高...",
-    "applied_theories": [
-      "認知負荷理論 Cognitive Load Theory",
-      "完形心理學 Gestalt Psychology",
-      "Miller's Law (7±2)"
-    ],
-    "interpretations": [
-      "「亂」→ 視覺元素過多或缺乏組織結構",
-      "可能違反 Gestalt 接近原則或相似原則"
-    ],
-    "guidance": "運用這些理論框架分析介面問題，給出專業建議"
-  },
-  "yuan": 99,
-  "hun": 50,
-  "mode": "yuan",
-  "deducted_from": "yuan"
+  "freeCredits": 10,
+  "pricePerSummon": 0.1,
+  "authorShare": 0.7,
+  "platformShare": 0.3,
+  "topupEnabled": true
 }
 ```
 
-### 6.3 格式參數說明
+### 7.2 觀念注入機制
 
-| format 值 | 說明 | 輸出內容 |
-|-----------|------|---------|
-| `claude-code` | Claude Code 完整格式（預設） | frontmatter + system prompt |
-| `gpt` | GPT Custom Instructions 格式 | 純 system prompt，適合貼入 GPT |
-| `raw-prompt` | 純 System Prompt | 最精簡，只有核心提示詞 |
+召喚智靈時，系統會自動進行「觀念注入」：
 
-### 6.3 格式轉換邏輯
+**流程：**
+1. 使用者提問：「介面很亂，不知道怎麼改」
+2. 系統語意匹配智靈（如「UI 心理學智靈」）
+3. 注入專業理論到 System Prompt：
+   - 認知負荷理論
+   - 完形心理學
+   - Miller's Law (7±2)
+4. AI 根據專業框架回應
 
-```typescript
-// 格式轉換函數
-function convertAgent(agent: Agent, format: string): string {
-  switch (format) {
-    case 'claude-code':
-      // 完整輸出，包含 frontmatter
-      return `---
-name: ${agent.name}
-description: |
-  ${agent.description}
-tools: ${agent.tools.join(', ')}
-model: ${agent.model}
----
-
-${agent.systemPrompt}`;
-
-    case 'gpt':
-      // GPT 格式：只保留 system prompt，移除 Claude 特定指令
-      return agent.systemPrompt;
-
-    case 'raw-prompt':
-      // 最精簡版本
-      return agent.systemPrompt;
-
-    default:
-      return convertAgent(agent, 'claude-code');
-  }
-}
-```
-
-### 6.4 Response 格式
-
-```json
-// GET /api/agents
-{
-  "success": true,
-  "data": {
-    "total": 33,
-    "categories": {
-      "thinking": 6,
-      "frontend": 4,
-      "backend": 5,
-      "game-dev": 5,
-      "industrial": 3,
-      "firmware": 6,
-      "quality": 4
-    },
-    "agents": [
-      {
-        "id": "algorithm-expert",
-        "name": "演算法智靈",
-        "category": "thinking",
-        "theories": ["計算複雜度理論", "攤銷分析", "Master Theorem"],
-        "description": "效能優化、複雜度分析",
-        "tools": ["Read-only tools"],
-        "model": "sonnet"
-      }
-    ]
-  }
-}
-```
+這就是靈閣的核心價值：**讓 AI 用專家的思維框架來回應**。
 
 ---
 
@@ -1629,7 +1183,7 @@ version: 1.0.0
 - 減少維護成本
 
 **文件更新：**
-- 新增獨立的認證機制文件（[docs/authentication.md](docs/authentication.md)）
+- 新增獨立的認證機制文件（[internal_docs/authentication.md](internal_docs/authentication.md)）
 - 更新 SDD 認證相關章節
 
 ### v2.1.0 更新內容
